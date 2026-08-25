@@ -33,7 +33,7 @@ The second rule: **we publish the results we lose.** A benchmark suite that only
 
 **Memory.** Peak resident set for every query, alongside wall time. An engine that is twice as fast and uses five times the memory has not necessarily won, and the only way anyone finds that out is if it is in the table.
 
-The Go microbenchmarks are not here. They live in the kuma repository and run on every pull request, because they must not require a Python toolchain.
+**Go microbenchmarks.** These live in the kuma repository and run on every pull request there, because they must not require a Python toolchain and they must fail the build the day a kernel gets twice as slow. What lives here is the record of running them on real machines. CI runs on a shared cloud runner, which is the right place to catch a regression and the wrong place to learn what the code actually does on hardware, so `scripts/micro.sh` runs the same benchmarks over ssh on machines we own and files the results alongside everything else. One JSONL file per host per run, with the CPU, the core count, the memory, the Go version and the load average the machine was already under.
 
 ## Making the comparison honest
 

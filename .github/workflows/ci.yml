@@ -55,6 +55,13 @@ jobs:
             exit 1
           fi
 
+      # The runner scripts drive real machines over ssh, so nobody runs them
+      # by accident and a mistake in one sits there until somebody does. It is
+      # only on Linux because that is where the runners have shellcheck.
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck scripts/*.sh docker/*.sh
+
       # The kuma runner is its own module so that a breaking change in kuma
       # cannot stop the harness from building. That separation is only real if
       # something builds it separately, which is this step.
