@@ -3,18 +3,15 @@
 // It follows the same contract as the Python runners: take a query name and
 // its input files, print one JSON object, exit zero.
 //
-// Almost every query in here reports that it is not implemented, and that is
-// the intended state rather than an unfinished file. Running the whole suite
-// today produces a table where kuma has fifteen rows saying which milestone
-// each query is waiting on, next to real pandas and Polars numbers. That table
-// is worth having from the beginning: it makes the harness a thing that works,
-// so the first query kuma can actually answer gets a number the day it lands
-// rather than the week someone remembers to wire it up.
+// Thirteen of the fifteen queries are implemented. The two that are not report
+// what they are waiting for and still produce a record, so the results table
+// has a row for every query and says why the empty cells are empty.
 //
-// Queries move from the pending list to a real implementation as the engine
-// grows. The rule is that a query is only implemented once it can be written
-// the way a user would write it. Reaching into unexported machinery to make a
-// benchmark number happen would measure something nobody can reproduce.
+// The rule for moving a query off that list is that it has to be written the
+// way a user would write it. Reaching into unexported machinery to make a
+// benchmark number happen would measure something nobody can reproduce, and
+// hand rolling an aggregate the engine is supposed to provide would measure the
+// runner rather than the engine.
 package main
 
 import (
@@ -22,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/tamnd/kuma"
 )
@@ -30,6 +28,12 @@ import (
 // deliberate. The kuma-bench module depends on the standard library and
 // nothing else, so it stays buildable when kuma's API is mid rewrite. Only
 // this directory tracks kuma, and only this directory breaks when kuma breaks.
+
+// mode says how kuma was configured, and goes in every record. Today there is
+// nothing to configure: the kernels are scalar, the engine is eager and a query
+// runs on the goroutine that asked for it. When the vectorized kernels arrive
+// this is where the difference gets recorded.
+const mode = "eager,scalar-kernels"
 
 // report is the runner protocol, defined in bench/report.go. It is written out
 // again here rather than imported, because importing it would make this module
@@ -49,21 +53,8 @@ type report struct {
 // waiting for. The milestone references point at docs/08-milestones.md in the
 // kuma repository.
 var pending = map[string]string{
-	"groupby_q1":  "needs the CSV reader and hash aggregation, milestone M4",
-	"groupby_q2":  "needs multi key hash aggregation, milestone M4",
-	"groupby_q3":  "needs hash aggregation with a high cardinality key, milestone M4",
-	"groupby_q4":  "needs the mean aggregate, milestone M4",
-	"groupby_q5":  "needs hash aggregation with a high cardinality key, milestone M4",
-	"groupby_q6":  "needs the median and standard deviation aggregates, milestone M4",
-	"groupby_q7":  "needs expressions over aggregate results, milestone M4",
-	"groupby_q8":  "needs top k within a group, milestone M5",
-	"groupby_q9":  "needs the correlation aggregate, milestone M5",
-	"groupby_q10": "needs six key hash aggregation, milestone M4",
-	"join_q1":     "needs the hash join, milestone M5",
-	"join_q2":     "needs the hash join, milestone M5",
-	"join_q3":     "needs the left outer hash join, milestone M5",
-	"join_q4":     "needs the hash join on a string key, milestone M5",
-	"join_q5":     "needs the hash join at input scale, milestone M5",
+	"groupby_q8": "needs the two largest values within a group, milestone M4",
+	"groupby_q9": "needs the correlation aggregate, milestone M4",
 }
 
 // inputs collects repeated -input flags, in the order the catalog gives them.
@@ -87,16 +78,60 @@ func main() {
 		os.Exit(2)
 	}
 
-	r := report{LibraryVersion: kuma.Version}
-	if reason, ok := pending[*query]; ok {
+	// Exit zero whatever happened. A query kuma cannot answer is a result, and
+	// the orchestrator needs it in the file rather than as a non-zero exit code
+	// it has to guess the meaning of.
+	emit(run(*query, files))
+}
+
+// run measures one query and returns the record to print.
+func run(query string, files []string) report {
+	r := report{LibraryVersion: kuma.Version, Mode: mode}
+
+	if reason, ok := pending[query]; ok {
 		r.Err = reason
-	} else {
-		r.Err = fmt.Sprintf("the kuma runner has no implementation for %s", *query)
+		return r
+	}
+	q, ok := queries[query]
+	if !ok {
+		r.Err = fmt.Sprintf("the kuma runner has no implementation for %s", query)
+		return r
+	}
+	if len(files) != q.inputs {
+		r.Err = fmt.Sprintf("%s reads %d files and was given %d", query, q.inputs, len(files))
+		return r
 	}
 
-	// Exit zero even though there is no timing. A query kuma cannot answer is
-	// a result, and the orchestrator needs it in the file rather than as a
-	// non-zero exit code it has to guess the meaning of.
+	// The clock covers the whole query, reading the files included, and stops
+	// once the result exists. kuma is eager, so there is nothing to force: the
+	// frame the last call returns is the answer, already materialized.
+	start := time.Now()
+	out, values, err := q.run(files)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		r.Err = err.Error()
+		return r
+	}
+
+	// Counting the rows and taking the checksum happen after the clock stops.
+	// Neither is part of what a user would be waiting for, so timing them would
+	// be measuring this harness.
+	sum, err := checksum(out, values)
+	if err != nil {
+		r.Err = err.Error()
+		return r
+	}
+
+	r.Elapsed = elapsed.Seconds()
+	r.OutRows = int64(out.NumRows())
+	r.Checksum = sum
+	r.PeakRSS = peakRSS()
+	return r
+}
+
+// emit writes the record and exits.
+func emit(r report) {
 	if err := json.NewEncoder(os.Stdout).Encode(r); err != nil {
 		fmt.Fprintf(os.Stderr, "kumarunner: %v\n", err)
 		os.Exit(1)

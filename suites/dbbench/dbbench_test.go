@@ -1,10 +1,15 @@
 package dbbench_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -165,26 +170,27 @@ var queryName = regexp.MustCompile(`"((?:groupby|join)_q\d+)"`)
 // text search rather than anything cleverer because two of the three runners
 // are Python and there is nothing to import.
 func TestRunnersImplementTheCatalog(t *testing.T) {
-	runners := map[string]string{
-		"pandas": filepath.Join("pandas", "run.py"),
-		"polars": filepath.Join("polars", "run.py"),
-		"kuma":   filepath.Join("kuma", "main.go"),
+	runners := map[string][]string{
+		"pandas": {filepath.Join("pandas", "run.py")},
+		"polars": {filepath.Join("polars", "run.py")},
+		"kuma":   goFiles(t, "kuma"),
 	}
 	want := map[string]bool{}
 	for _, name := range dbbench.Names() {
 		want[name] = true
 	}
 
-	for lib, path := range runners {
+	for lib, paths := range runners {
 		t.Run(lib, func(t *testing.T) {
-			src, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("cannot read the %s runner: %v", lib, err)
-			}
-
 			found := map[string]bool{}
-			for _, m := range queryName.FindAllStringSubmatch(string(src), -1) {
-				found[m[1]] = true
+			for _, path := range paths {
+				src, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatalf("cannot read the %s runner: %v", lib, err)
+				}
+				for _, m := range queryName.FindAllStringSubmatch(string(src), -1) {
+					found[m[1]] = true
+				}
 			}
 
 			for name := range want {
@@ -199,6 +205,85 @@ func TestRunnersImplementTheCatalog(t *testing.T) {
 			}
 		})
 	}
+}
+
+// goFiles returns the Go source files of a runner, which is where the query
+// names are. The kuma runner is more than one file, and a check that reads only
+// main.go would pass while the implementations were somewhere else entirely.
+func goFiles(t *testing.T, dir string) []string {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(dir, "*.go"))
+	if err != nil {
+		t.Fatalf("cannot list %s: %v", dir, err)
+	}
+	if len(paths) == 0 {
+		t.Fatalf("%s holds no Go files", dir)
+	}
+	return paths
+}
+
+// TestRunnerReportMatchesTheProtocol checks the duplicated report type.
+//
+// The kuma runner is its own module and writes the report type out again rather
+// than importing bench, so that a breaking change in kuma cannot stop the
+// harness from building. That is worth the duplication and it is only worth it
+// while the two agree, since a field renamed on one side and not the other
+// would show up as a column of zeros in the results rather than as an error.
+func TestRunnerReportMatchesTheProtocol(t *testing.T) {
+	want := jsonFields(t, filepath.Join("..", "..", "bench", "report.go"), "Report")
+	got := jsonFields(t, filepath.Join("kuma", "main.go"), "report")
+
+	for name := range got {
+		if !want[name] {
+			t.Errorf("the kuma runner reports %q, which the protocol does not have", name)
+		}
+	}
+
+	// in_rows is the one field a runner may leave out, and every runner does,
+	// so it is not required here either.
+	for name := range want {
+		if !got[name] && name != "in_rows" {
+			t.Errorf("the kuma runner does not report %q", name)
+		}
+	}
+}
+
+// jsonFields returns the JSON names of the fields of one struct in a Go file.
+func jsonFields(t *testing.T, path, name string) map[string]bool {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+	if err != nil {
+		t.Fatalf("cannot parse %s: %v", path, err)
+	}
+
+	out := map[string]bool{}
+	ast.Inspect(file, func(n ast.Node) bool {
+		spec, ok := n.(*ast.TypeSpec)
+		if !ok || spec.Name.Name != name {
+			return true
+		}
+		st, ok := spec.Type.(*ast.StructType)
+		if !ok {
+			return true
+		}
+		for _, f := range st.Fields.List {
+			if f.Tag == nil {
+				continue
+			}
+			tag, err := strconv.Unquote(f.Tag.Value)
+			if err != nil {
+				t.Fatalf("%s has a tag that will not unquote: %v", name, err)
+			}
+			out[strings.Split(reflect.StructTag(tag).Get("json"), ",")[0]] = true
+		}
+		return false
+	})
+
+	if len(out) == 0 {
+		t.Fatalf("%s has no struct called %s with JSON tags", path, name)
+	}
+	return out
 }
 
 // TestFileNamesMatchTheGenerator guards the one duplication in this repository
