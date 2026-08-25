@@ -5,9 +5,9 @@ Benchmarks for [kuma](https://github.com/tamnd/kuma), measured against pandas an
 [![CI](https://github.com/tamnd/kuma-bench/actions/workflows/ci.yml/badge.svg)](https://github.com/tamnd/kuma-bench/actions/workflows/ci.yml)
 [![Nightly](https://github.com/tamnd/kuma-bench/actions/workflows/nightly.yml/badge.svg)](https://github.com/tamnd/kuma-bench/actions/workflows/nightly.yml)
 
-**Status: early.** The harness works end to end. The generator, the orchestrator, the pandas runner and the Polars runner are all done, and all fifteen db-benchmark queries run and produce identical answers in both libraries. What is missing is kuma, which cannot yet answer any of them. Every kuma row in the results says which milestone it is waiting on.
+**Status: early, and kuma is in the table now.** The generator, the orchestrator and all three runners are done. Thirteen of the fifteen db-benchmark queries run on kuma and give the same answers as pandas and Polars at 0.5 GB, ten million rows, on real hardware. The two that do not are waiting on aggregates kuma has not got yet, and they say so in the results rather than going missing. kuma is also three to eight times slower than both libraries today, which is written up below with the numbers, because that is the part a benchmark repository exists to be honest about.
 
-That ordering is deliberate and the reason is below.
+That ordering, harness first and library second, is deliberate and the reason is below.
 
 ## Why this is a separate repository
 
@@ -19,7 +19,7 @@ There is a second reason. A benchmark repository has a different rhythm from a l
 
 Benchmarks that run once, at the end, before an announcement, are marketing. Benchmarks that run continuously, from the first milestone, are engineering. The difference is that the second kind tells you which commit made things slow while you still remember what you were doing.
 
-So this harness exists from kuma's first milestone, when there is nothing to measure. Running it today gives a table with real pandas and Polars numbers and fifteen kuma rows saying which milestone each query is waiting on. That is a useful table: it means the first query kuma can answer gets a number the day it lands rather than the week somebody remembers to wire it up, and by the time the SIMD work is done there will be a year of history to check the claims against.
+So this harness existed from kuma's first milestone, when there was nothing to measure and every kuma row in the table said which milestone it was waiting on. That was a useful table even then, and it paid for itself the day the first query landed: it got a number that day rather than the week somebody remembered to wire it up, and by the time the SIMD work is done there will be a year of history to check the claims against.
 
 The second rule: **we publish the results we lose.** A benchmark suite that only shows wins is not information, and anyone experienced reads it as an advertisement and discounts everything in it including the true parts. Where pandas or Polars is faster the number goes in the table with a note about why.
 
@@ -57,27 +57,55 @@ This is most of the work. It is easy to produce a benchmark that is wrong in you
 
 ## Does it actually agree
 
-Yes, on all fifteen queries. Same row counts, same checksums, pandas against Polars:
+Yes. Same row counts and same checksums for every query all three libraries can answer, at ten million rows, on both machines below:
 
 ```
-groupby_q1   100      v1=299926
-groupby_q2   10000    v1=299926
-groupby_q3   1000     v1=299926 v3=50093.2
-groupby_q4   100      v1=299.93 v2=798.2 v3=5009.22
-groupby_q5   1000     v1=299926 v2=798224 v3=5.00917e+06
-groupby_q6   63135    v3_median=3.16665e+06 v3_sd=644437
-groupby_q7   1000     range_v1_v2=3996
-groupby_q8   2000     v3=197041
-groupby_q9   10000    r2=1308.75
-groupby_q10  100000   v3=5.00917e+06 count=100000
-join_q1      100000   v1=4.99212e+06 v2=6.12874e+06
-join_q2      89810    v1=4.48623e+06 v2=4.79516e+06
-join_q3      100000   v1=4.99212e+06 v2=4.79516e+06
-join_q4      89810    v1=4.48623e+06 v2=4.79516e+06
-join_q5      89946    v1=4.4895e+06 v2=4.4993e+06
+groupby_q1   100        v1=2.99955e+07
+groupby_q2   10000      v1=2.99955e+07
+groupby_q3   100000     v1=2.99955e+07 v3=5.0013e+06
+groupby_q4   100        v1=299.955 v2=799.88 v3=5001.34
+groupby_q5   100000     v1=2.99955e+07 v2=7.9988e+07 v3=5.00135e+08
+groupby_q6   6319501    v3_median=3.16073e+08 v3_sd=6.46818e+07
+groupby_q7   100000     range_v1_v2=399856
+groupby_q8   200000     v3=1.97008e+07                     pandas and Polars only
+groupby_q9   10000      r2=10.0628                         pandas and Polars only
+groupby_q10  10000000   v3=5.00135e+08 count=1e+07
+join_q1      9000695    v1=4.50194e+08 v2=4.1384e+08
+join_q2      8997488    v1=4.50051e+08 v2=4.48625e+08
+join_q3      10000000   v1=5.00193e+08 v2=4.48625e+08
+join_q4      8997488    v1=4.50051e+08 v2=4.48625e+08
+join_q5      9001850    v1=4.50243e+08 v2=4.50311e+08
 ```
 
-Getting there took two fixes worth mentioning, because both are the kind of thing that quietly turns a benchmark into fiction. The checksum was being computed inside the timed section, which measured this harness rather than the query. And pandas skips missing values when it sums while Polars propagates a NaN through the whole column, so the correlation query disagreed for reasons that had nothing to do with the answer. Each runner now says explicitly how it sums, so what gets compared is the arithmetic rather than the convention.
+Getting there took three fixes worth mentioning, because all of them are the kind of thing that quietly turns a benchmark into fiction. The checksum was being computed inside the timed section, which measured this harness rather than the query. pandas skips missing values when it sums while Polars propagates a NaN through the whole column, so the correlation query disagreed for reasons that had nothing to do with the answer, and each runner now says explicitly how it sums. And a row whose key is missing has to be a group of its own in all three, which pandas only does when the runner asks for it, or the row counts drift apart on every query and the timings stop comparing the same work.
+
+## Where kuma stands today
+
+Slower than both, everywhere. The 0.5 GB suite, ten million rows, on an idle i9-13900K, three runs a query, showing the median of the warm ones. The cold run is left out of the table and kept in the results file, where it can be read on its own:
+
+| query | kuma | pandas | polars |
+| --- | ---: | ---: | ---: |
+| groupby_q1 | 3.13s | **407ms** | 485ms |
+| groupby_q2 | 3.75s | 806ms | **656ms** |
+| groupby_q3 | 4.17s | 850ms | **629ms** |
+| groupby_q4 | 3.89s | 513ms | **460ms** |
+| groupby_q5 | 4.22s | 597ms | **539ms** |
+| groupby_q6 | 8.23s | 3.97s | **1.11s** |
+| groupby_q7 | 5.22s | 761ms | **658ms** |
+| groupby_q8 | waiting on M4 | 3.08s | **703ms** |
+| groupby_q9 | waiting on M4 | 6.27s | **752ms** |
+| groupby_q10 | 11.1s | 5.91s | **1.82s** |
+| join_q1 | 3.51s | 868ms | **572ms** |
+| join_q2 | 3.78s | 998ms | **785ms** |
+| join_q3 | 3.82s | 822ms | **537ms** |
+| join_q4 | 4.05s | 2.04s | **662ms** |
+| join_q5 | 14.4s | 2.74s | **1.07s** |
+
+This is the expected shape and not a surprise. kuma is eager, its kernels are scalar, it runs the whole query on the goroutine that asked for it, and most of what you see above is the CSV reader rather than the group by. pandas reads the same files through PyArrow, which is C++ and threaded, and Polars reads them through its own threaded reader and then runs a query plan across every core. Milestones M2 through M6 are the ones that close this, and the reason to publish the table now is that a starting point you did not write down is not a starting point.
+
+Two rows are worth looking at on their own. groupby_q10 groups by all six keys at once, which is nearly as many groups as rows, and it is where the hash table shows up in the number. join_q5 joins two ten million row tables and is four times worse than any other join, which says the build side is the problem rather than the probe.
+
+The same run on a shared eight core EPYC that was already at load 5.9 is in `results/` as well. Its absolute numbers mean very little, which is exactly why the load average goes in every record, but the ordering is the same and the same two queries stand out, so what the table above shows is the code rather than the box.
 
 ## Layout
 
@@ -117,10 +145,12 @@ uv sync
 Then run a suite:
 
 ```
-go run ./cmd/kumabench -suite dbbench -libs kuma,pandas,polars -size 0.5GB -python .venv/bin/python
+go run ./cmd/kumabench -suite dbbench -libs kuma,pandas,polars -size 0.5GB \
+    -python .venv/bin/python -host server3 -cpu "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)" \
+    -memory-gb "$(free -g | awk '/^Mem:/ {print $2}')" -load "$(cut -d' ' -f1 /proc/loadavg)"
 ```
 
-It writes JSONL to `results/` and prints a table. Add `-n` to see the exact commands it would run without running them. Add `-docker` to use the pinned images instead of whatever is on your machine, which is what you want if the numbers are going anywhere public.
+It writes JSONL to `results/` and prints a table. The machine flags are that long winded on purpose: a result that cannot name the box it ran on cannot be compared with anything later, so `-host` is required and the rest travel with every record. Add `-n` to see the exact commands it would run without running them. Add `-docker` to use the pinned images instead of whatever is on your machine, which is what you want if the numbers are going anywhere public.
 
 Reading the results afterwards:
 
@@ -148,6 +178,8 @@ We will probably lose to Polars on TPC-H early, because those queries reward opt
 We should be able to win on string heavy work, because StringView by default with inline prefix comparison is a real structural advantage.
 
 We will lose on ecosystem, forever, and no benchmark measures that. The reasons to use kuma are compile time safety, a single binary, real cancellation and no Python runtime, and none of those show up in a wall clock number. These benchmarks exist to show that choosing those things does not cost speed, not to claim that speed is the reason.
+
+None of that has happened yet. Today kuma loses to both libraries on every query it can answer, which is what a first implementation with scalar kernels and an eager engine looks like. These predictions get judged when the work they describe is done, and they stay written exactly as they were until then.
 
 ## Sources
 

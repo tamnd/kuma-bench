@@ -58,6 +58,15 @@ type options struct {
 	commit  string
 	dryRun  bool
 
+	// host, cpu, memoryGB and load1 describe the machine. Nothing here can be
+	// worked out from inside the process on every operating system we run on,
+	// and a timing without them is a number with no way back to the metal it
+	// happened on, so they are asked for rather than guessed at.
+	host     string
+	cpu      string
+	memoryGB int
+	load1    float64
+
 	// repoRoot and dataRoot are absolute, worked out once at startup. The
 	// runners need absolute paths because one of them runs from a
 	// subdirectory and the others may run inside a container.
@@ -84,8 +93,17 @@ func run() error {
 		runner  = flag.String("runner", "", "label for the machine, for example bare-metal")
 		commit  = flag.String("commit", "", "the kuma commit under test")
 		dryRun  = flag.Bool("n", false, "print what would run without running it")
+
+		host   = flag.String("host", "", "the name we call this machine, for example server3")
+		cpu    = flag.String("cpu", "", "the CPU model, as the machine reports it")
+		memory = flag.Int("memory-gb", 0, "how much memory the machine has")
+		load   = flag.Float64("load", 0, "the one minute load average before the run started")
 	)
 	flag.Parse()
+
+	if *host == "" && !*dryRun {
+		return errors.New("-host is required, since a result that cannot name its machine cannot be compared with anything")
+	}
 
 	if *suite != "dbbench" {
 		return fmt.Errorf("unknown suite %q, only dbbench exists so far", *suite)
@@ -113,6 +131,7 @@ func run() error {
 		data: *data, out: *out, timeout: *timeout, python: *python,
 		docker: *docker, pyImage: *pyImage, goImage: *goImage,
 		runner: *runner, commit: *commit, dryRun: *dryRun,
+		host: *host, cpu: *cpu, memoryGB: *memory, load1: *load,
 	}
 	if opts.repoRoot, err = filepath.Abs("."); err != nil {
 		return err
@@ -241,6 +260,10 @@ func measure(queries []dbbench.Query, o options) error {
 
 	machine := bench.LocalMachine()
 	machine.Runner = o.runner
+	machine.Host = o.host
+	machine.CPUModel = o.cpu
+	machine.MemoryGB = o.memoryGB
+	machine.Load1 = o.load1
 
 	var all []bench.Result
 	for _, q := range queries {

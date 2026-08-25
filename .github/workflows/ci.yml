@@ -69,9 +69,14 @@ jobs:
         run: go build ./...
         working-directory: suites/dbbench/kuma
 
+      # A thousand rows is too few to time and enough to prove the runner reads
+      # a file, groups it and prints a record. The smoke job below runs the
+      # whole suite, but only on Linux, and this one runs on macOS too.
       - name: the kuma runner still answers
-        run: go run . -query groupby_q1
-        working-directory: suites/dbbench/kuma
+        run: |
+          go run ./cmd/gendata -suite groupby -rows 1000 -out data
+          cd suites/dbbench/kuma
+          go run . -query groupby_q1 -input ../../../data/G1_1e3_1e2_0_0.csv
 
   python:
     name: python
@@ -128,6 +133,7 @@ jobs:
             -rows 200000 \
             -runs 2 \
             -runner github-actions \
+            -host github-runner \
             -commit "${{ github.sha }}" \
             -out results-smoke
 
