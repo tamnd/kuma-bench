@@ -118,14 +118,18 @@ for host in "$@"; do
 		cd ~/src/kuma
 		git fetch -q origin
 		git checkout -q --detach '${ref:-origin/main}'
-		git rev-parse HEAD > /tmp/kuma-commit
 		go version
 		${goexp:+GOEXPERIMENT=$goexp }go test -run '^\$' -bench '$bench_regexp' -benchmem -count '$count' $packages
 	" | tee "$raw" >&2
 
+	# The commit is read back out of the checkout rather than carried over from
+	# the run above, because these are two separate login sessions and a file
+	# left in /tmp by the first one is not something the second one can count on
+	# finding. The checkout is still sitting at the commit that was measured, so
+	# it is the thing to ask.
 	read -r commit go_version memory_gb <<-EOF
 		$(ssh "$host" "
-			cat /tmp/kuma-commit | tr -d '\n'
+			git -C ~/src/kuma rev-parse HEAD | tr -d '\n'
 			printf ' '
 			\$HOME/sdk/go1.27.0/bin/go env GOVERSION | tr -d '\n'
 			printf ' '
