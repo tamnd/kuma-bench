@@ -91,6 +91,17 @@ type Machine struct {
 	// Runner is "github-actions" or "bare-metal" or similar. Shared cloud
 	// runners have noisy neighbours and their numbers deserve a caveat.
 	Runner string `json:"runner,omitempty"`
+	// Load1 is the one minute load average when the run started, where the
+	// operating system has one. A number well above the core count means the
+	// machine was already busy and the timings are worth very little, and the
+	// only way a reader finds that out later is if it was written down at the
+	// time. Zero means it was not collected.
+	Load1 float64 `json:"load_1m,omitempty"`
+	// Host is the name we call the machine, such as "server3". Two boxes
+	// ordered on the same day report the same CPU model and the same core
+	// count and still do not produce the same numbers, so the name is what
+	// makes a run traceable back to the metal it happened on.
+	Host string `json:"host,omitempty"`
 }
 
 // LocalMachine fills in what can be determined from the running process. The
