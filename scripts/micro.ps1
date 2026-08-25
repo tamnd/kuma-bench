@@ -55,4 +55,10 @@ if ($GoExperiment -ne "") {
 }
 
 & $go version
-& $go test -run "^$" -bench $Bench -benchmem -count $Count $Packages
+
+# A list of packages arrives as one string, because ssh and PowerShell between
+# them have already decided that a quoted argument is one argument. Splitting it
+# here is what turns it back into the several arguments go test wants, and a
+# single package comes out of this as a list of one.
+$pkgs = $Packages -split '\s+' | Where-Object { $_ -ne "" }
+& $go test -run "^$" -bench $Bench -benchmem -count $Count @pkgs
