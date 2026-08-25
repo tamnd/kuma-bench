@@ -46,7 +46,14 @@ Set-Location $src
 # knows as a remote one, and --detach will not sit next to that.
 $at = (& git rev-parse -q --verify "origin/$Ref^{commit}")
 if (-not $at) {
-	$at = (& git rev-parse --verify "$Ref^{commit}")
+	$at = (& git rev-parse -q --verify "$Ref^{commit}")
+}
+if (-not $at) {
+	# Saying so here is the difference between one clear line and a page of
+	# PowerShell about calling a method on a null. A branch that was merged and
+	# deleted while the run was going is how this happens in practice.
+	Write-Error "micro: $Ref is not a commit on this host, so there is nothing to measure"
+	exit 1
 }
 & git checkout -q --detach $at.Trim()
 
@@ -58,7 +65,12 @@ if ($GoExperiment -ne "") {
 
 # A list of packages arrives as one string, because ssh and PowerShell between
 # them have already decided that a quoted argument is one argument. Splitting it
-# here is what turns it back into the several arguments go test wants, and a
-# single package comes out of this as a list of one.
-$pkgs = $Packages -split '\s+' | Where-Object { $_ -ne "" }
+# here is what turns it back into the several arguments go test wants.
+#
+# The @() around it is not decoration. A pipeline that produces one item hands
+# back that item rather than a list holding it, and splatting a string spreads
+# its characters, so a run of one package asked go test for a package called "."
+# and then one called "k" and then one called "e". Forcing the list keeps a list
+# of one a list.
+$pkgs = @($Packages -split '\s+' | Where-Object { $_ -ne "" })
 & $go test -run "^$" -bench $Bench -benchmem -count $Count @pkgs
