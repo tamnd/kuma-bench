@@ -133,6 +133,7 @@ jobs:
             -rows 200000 \
             -runs 2 \
             -runner github-actions \
+            -host github-runner \
             -commit "${{ github.sha }}" \
             -out results-smoke
 

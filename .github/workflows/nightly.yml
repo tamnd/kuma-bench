@@ -85,11 +85,18 @@ jobs:
       - name: generate
         run: go run ./cmd/gendata -suite all -size "$SIZE" -out data
 
+      # These go into the records rather than only into the log, because a
+      # timing from a shared runner is worth what its machine description says
+      # it is worth and nobody reading the history a year from now can go back
+      # and ask which box it was.
       - name: describe the machine
         run: |
-          echo "cpu:    $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          {
+            echo "CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+            echo "MEMORY_GB=$(free -g | awk '/^Mem:/ {print $2}')"
+            echo "LOAD_1M=$(cut -d' ' -f1 /proc/loadavg)"
+          } >> "$GITHUB_ENV"
           echo "cores:  $(nproc)"
-          echo "memory: $(free -g | awk '/^Mem:/ {print $2}') GiB"
           echo "kernel: $(uname -r)"
 
       - name: run
@@ -101,6 +108,10 @@ jobs:
             -size "$SIZE" \
             -runs "$RUNS" \
             -runner github-actions \
+            -host github-runner \
+            -cpu "$CPU_MODEL" \
+            -memory-gb "$MEMORY_GB" \
+            -load "$LOAD_1M" \
             -commit "${{ steps.kuma.outputs.version }}" \
             -out results
 
