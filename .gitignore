@@ -11,6 +11,12 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Compiled runners. `go build` in suites/dbbench/kuma drops one of these next
+# to the source and it is a few megabytes of nothing.
+/suites/dbbench/kuma/kuma
+/kumabench
+/gendata
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
@@ -30,3 +36,24 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Generated datasets. The generator is deterministic, so these are a function
+# of the flags and there is nothing to preserve by committing several gigabytes
+# of CSV.
+data/
+*.csv
+*.parquet
+*.partial
+
+# The Python environment. pyproject.toml and uv.lock are what pin the
+# libraries, and both of those are committed.
+.venv/
+__pycache__/
+.ruff_cache/
+
+# The generated site.
+site/public/
+
+# Results from a scratch run. Real results live in results/ and are committed,
+# which is the point of the repository.
+results-smoke/

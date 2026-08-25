@@ -1,0 +1,138 @@
+name: CI
+
+# This does not benchmark anything. It checks that the harness works, which is
+# a different job and the one that has to pass on every commit. The numbers
+# come from the nightly workflow, on a quiet machine, at a size worth
+# measuring. A shared runner is fine for correctness and useless for timing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+
+jobs:
+  go:
+    name: go
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        run: go test -race -shuffle=on ./...
+
+      - name: vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "these files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      # The kuma runner is its own module so that a breaking change in kuma
+      # cannot stop the harness from building. That separation is only real if
+      # something builds it separately, which is this step.
+      - name: build the kuma runner
+        run: go build ./...
+        working-directory: suites/dbbench/kuma
+
+      - name: the kuma runner still answers
+        run: go run . -query groupby_q1
+        working-directory: suites/dbbench/kuma
+
+  python:
+    name: python
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      # --frozen fails rather than re-resolving. If the lock file and the
+      # project file have drifted, that is a commit someone forgot to make and
+      # it should be visible here rather than in a benchmark result.
+      - name: install
+        run: uv sync --frozen
+
+      - name: ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: install
+        run: uv sync --frozen
+
+      # Small enough to finish in a minute and large enough that every code
+      # path runs: every group by cardinality, every join width, and the null
+      # handling in the outer join.
+      - name: generate
+        run: go run ./cmd/gendata -suite all -rows 200000 -out data
+
+      - name: run every query
+        run: |
+          go run ./cmd/kumabench \
+            -libs kuma,pandas,polars \
+            -python .venv/bin/python \
+            -rows 200000 \
+            -runs 2 \
+            -runner github-actions \
+            -commit "${{ github.sha }}" \
+            -out results-smoke
+
+      # This is the check worth having. Every library computes a checksum of
+      # its result, and if two of them disagree then one of them is wrong, and
+      # a wrong answer with a good time on it is worse than no benchmark at
+      # all. The timings from a shared runner are thrown away; the answers are
+      # not.
+      - name: the answers agree
+        run: go run ./cmd/report -in results-smoke -all -strict
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-results
+          path: results-smoke/
+          retention-days: 7

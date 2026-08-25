@@ -1,0 +1,35 @@
+# The Python side of the harness.
+#
+# Two libraries and their readers, and nothing else. This is not an
+# environment anybody develops in, it is the exact set of versions a
+# measurement ran against, and the lock file next to it is the part that
+# matters. A benchmark result without a lock file is an anecdote.
+#
+# Bumping a version here is a deliberate act with its own commit, because a
+# pandas or Polars release changes the numbers and the history has to say
+# where.
+[project]
+name = "kuma-bench"
+version = "0.0.0"
+description = "Benchmark runners for kuma, pandas and Polars"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=2.3,<4",
+    "polars>=1.30,<2",
+    "pyarrow>=18",
+    "numpy>=2",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.9"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# The runners put sys.path manipulation above their imports on purpose, so
+# that common.py resolves without turning this directory into a package.
+"suites/dbbench/*/run.py" = ["E402"]

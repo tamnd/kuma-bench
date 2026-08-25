@@ -1,0 +1,133 @@
+name: Nightly
+
+# The run that produces numbers. It commits its results back to the
+# repository, which is the point of the repository: a chart of query time by
+# commit over eighteen months is worth more than any single table.
+#
+# These numbers come from a shared GitHub runner, so they carry a runner label
+# saying so and they are read with that in mind. Noisy neighbours move a
+# benchmark by tens of percent. The large sizes run on a dedicated machine
+# through the workflow_dispatch path below, and those are the ones that get
+# published.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      size:
+        description: dataset size
+        type: choice
+        default: 0.5GB
+        options: [0.5GB, 5GB, 50GB]
+      runs:
+        description: repetitions per query
+        default: "5"
+      commit-results:
+        description: commit the results back to the repository
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  GOTOOLCHAIN: local
+  SIZE: ${{ inputs.size || '0.5GB' }}
+  RUNS: ${{ inputs.runs || '5' }}
+
+jobs:
+  bench:
+    name: dbbench ${{ inputs.size || '0.5GB' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+
+      - name: install
+        run: uv sync --frozen
+
+      # The kuma commit under test goes in every record, so that a jump in the
+      # numbers can be traced to the change that caused it. Without this the
+      # history is a line with no explanation attached to any point on it.
+      - name: resolve the kuma commit under test
+        id: kuma
+        run: |
+          go get github.com/tamnd/kuma@main
+          version=$(go list -m -f '{{.Version}}' github.com/tamnd/kuma)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "kuma $version"
+        working-directory: suites/dbbench/kuma
+
+      - name: free disk space
+        run: |
+          # A 5GB run writes about eleven gigabytes of CSV, and the runner
+          # image ships with several gigabytes of toolchains this job will
+          # never touch.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - name: generate
+        run: go run ./cmd/gendata -suite all -size "$SIZE" -out data
+
+      - name: describe the machine
+        run: |
+          echo "cpu:    $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          echo "cores:  $(nproc)"
+          echo "memory: $(free -g | awk '/^Mem:/ {print $2}') GiB"
+          echo "kernel: $(uname -r)"
+
+      - name: run
+        run: |
+          go run ./cmd/kumabench \
+            -suite dbbench \
+            -libs kuma,pandas,polars \
+            -python .venv/bin/python \
+            -size "$SIZE" \
+            -runs "$RUNS" \
+            -runner github-actions \
+            -commit "${{ steps.kuma.outputs.version }}" \
+            -out results
+
+      - name: the answers agree
+        run: go run ./cmd/report -in results -strict
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: results-${{ env.SIZE }}
+          path: results/
+          retention-days: 90
+
+      # Committing the results is what turns a nightly job into a history. It
+      # runs even if the strict check failed, because a run where the answers
+      # disagreed is a finding and deleting it would hide the finding.
+      - name: commit the results
+        if: always() && (github.event_name == 'schedule' || inputs.commit-results)
+        run: |
+          if [ -z "$(git status --porcelain results/)" ]; then
+            echo "no new results"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add results/
+          git commit -m "results: dbbench $SIZE on $(date -u +%Y-%m-%d)
+
+          kuma ${{ steps.kuma.outputs.version }}, github-actions runner."
+          git push
