@@ -117,7 +117,12 @@ for host in "$@"; do
 		if [ ! -d ~/src/kuma/.git ]; then git clone -q '$repo' ~/src/kuma; fi
 		cd ~/src/kuma
 		git fetch -q origin
-		git checkout -q --detach '${ref:-origin/main}'
+		# A bare branch name is resolved against origin first. Asking git to
+		# check out a name it only knows as a remote branch makes it want to
+		# create a local branch of that name, which is not something --detach
+		# will sit next to.
+		at=\$(git rev-parse -q --verify 'origin/${ref:-origin/main}^{commit}' || git rev-parse --verify '${ref:-origin/main}^{commit}')
+		git checkout -q --detach \"\$at\"
 		go version
 		${goexp:+GOEXPERIMENT=$goexp }go test -run '^\$' -bench '$bench_regexp' -benchmem -count '$count' $packages
 	" | tee "$raw" >&2

@@ -40,7 +40,15 @@ if (-not (Test-Path (Join-Path $src ".git"))) {
 
 Set-Location $src
 & git fetch -q origin
-& git checkout -q --detach $Ref
+
+# A bare branch name is resolved against origin first, for the same reason the
+# shell script does it: git wants to make a local branch out of a name it only
+# knows as a remote one, and --detach will not sit next to that.
+$at = (& git rev-parse -q --verify "origin/$Ref^{commit}")
+if (-not $at) {
+	$at = (& git rev-parse --verify "$Ref^{commit}")
+}
+& git checkout -q --detach $at.Trim()
 
 if ($GoExperiment -ne "") {
 	$env:GOEXPERIMENT = $GoExperiment
