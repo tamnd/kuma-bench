@@ -21,10 +21,19 @@ forces the whole result to exist.
 import argparse
 import json
 import platform
-import resource
 import sys
 import time
 import traceback
+
+# Windows has no getrusage. The suite runs on Linux, and the record has the
+# field either way, so a platform that cannot answer says nothing rather than
+# making the runner refuse to start. The kuma runner does the same thing in
+# rss_other.go, so that the three libraries stay comparable on a box where the
+# number is not available to any of them.
+try:
+    import resource
+except ImportError:
+    resource = None
 
 
 def emit(report):
@@ -46,7 +55,12 @@ def peak_rss_bytes():
     getrusage reports kilobytes on Linux and bytes on macOS, and nothing in the
     documentation warns you, so a number that is off by a factor of a thousand
     is the usual first result.
+
+    Zero means it was not measured, which is what a platform without getrusage
+    gets.
     """
+    if resource is None:
+        return 0
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return peak if platform.system() == "Darwin" else peak * 1024
 
