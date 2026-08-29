@@ -14,6 +14,7 @@ param(
 	[int]$Count = 5,
 	[string]$Bench = ".",
 	[string]$Packages = "./...",
+	[string]$Dir = ".",
 	[string]$GoExperiment = "",
 	[switch]$Facts
 )
@@ -62,6 +63,11 @@ if ($GoExperiment -ne "") {
 }
 
 & $go version
+
+# kuma is more than one module, and the nested one is measured by running in its
+# directory rather than by naming it as a package, since the root ./... does not
+# reach across a go.mod.
+Set-Location (Join-Path $src $Dir)
 
 # A list of packages arrives as one string, because ssh and PowerShell between
 # them have already decided that a quoted argument is one argument. Splitting it

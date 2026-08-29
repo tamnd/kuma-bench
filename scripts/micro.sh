@@ -23,6 +23,10 @@ set -euo pipefail
 count=5
 bench_regexp='.'
 packages='./...'
+# kuma is more than one module. The bridge to arrow-go is a module of its own,
+# nested in the same checkout, and the root ./... does not reach it, so a run
+# against it is the same run one directory down.
+dir='.'
 ref=''
 outdir='results'
 goexp=''
@@ -34,6 +38,7 @@ usage: scripts/micro.sh [options] host...
   -c N        repetitions, passed to go test -count (default 5)
   -b REGEXP   which benchmarks to run, passed to go test -bench (default .)
   -p PKGS     which packages to run them in (default ./...)
+  -d DIR      where in the checkout to run, for a nested module (default .)
   -r REF      the kuma commit or branch to measure (default origin/main)
   -o DIR      where to write the results (default results)
   -s          set GOEXPERIMENT=simd for the run
@@ -41,11 +46,12 @@ EOF
 	exit 2
 }
 
-while getopts 'c:b:p:r:o:sh' opt; do
+while getopts 'c:b:p:d:r:o:sh' opt; do
 	case "$opt" in
 	c) count="$OPTARG" ;;
 	b) bench_regexp="$OPTARG" ;;
 	p) packages="$OPTARG" ;;
+	d) dir="$OPTARG" ;;
 	r) ref="$OPTARG" ;;
 	o) outdir="$OPTARG" ;;
 	s) goexp='simd' ;;
@@ -78,7 +84,7 @@ for host in "$@"; do
 		# shellcheck disable=SC2029
 		ssh "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File micro.ps1 \
 			-Ref \"${ref:-origin/main}\" -Count $count -Bench \"$bench_regexp\" \
-			-Packages \"$packages\" -GoExperiment \"$goexp\"" | tee "$raw" >&2
+			-Packages \"$packages\" -Dir \"$dir\" -GoExperiment \"$goexp\"" | tee "$raw" >&2
 
 		# Windows ends its lines with a carriage return, which read would
 		# otherwise hand to a flag that wants a number.
@@ -124,6 +130,7 @@ for host in "$@"; do
 		at=\$(git rev-parse -q --verify 'origin/${ref:-origin/main}^{commit}' || git rev-parse --verify '${ref:-origin/main}^{commit}')
 		git checkout -q --detach \"\$at\"
 		go version
+		cd '$dir'
 		${goexp:+GOEXPERIMENT=$goexp }go test -run '^\$' -bench '$bench_regexp' -benchmem -count '$count' $packages
 	" | tee "$raw" >&2
 
