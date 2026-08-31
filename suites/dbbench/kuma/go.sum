@@ -1,6 +1,2 @@
-github.com/tamnd/kuma v0.0.0-20260825101107-31342cda13ee h1:hnWLuWs/i6r7xyBDX7ubd8o1RQ/Dpzwwm+zDIpp7qhI=
-github.com/tamnd/kuma v0.0.0-20260825101107-31342cda13ee/go.mod h1:BzL7bXFaO8rwUS39R5F4wgMVQI+WneIA+Vj39UwSSe0=
-github.com/tamnd/kuma v0.0.0-20260825223855-bc3a270f3cc4 h1:W2vaTkpgnTOuEb1d5f51HU6fieZR2yRCnQ5n40LXlos=
-github.com/tamnd/kuma v0.0.0-20260825223855-bc3a270f3cc4/go.mod h1:BzL7bXFaO8rwUS39R5F4wgMVQI+WneIA+Vj39UwSSe0=
-github.com/tamnd/kuma v0.0.0-20260825230005-958818ab5af1 h1:0NfZbWS3idobPYH6zF0xjobwrCVOLCFLXF83j3VojK8=
-github.com/tamnd/kuma v0.0.0-20260825230005-958818ab5af1/go.mod h1:BzL7bXFaO8rwUS39R5F4wgMVQI+WneIA+Vj39UwSSe0=
+github.com/tamnd/kuma v0.0.6 h1:PU45516XtZ0K1SbeT0XT2fMHMyim8/SOq6s4Z4slgCg=
+github.com/tamnd/kuma v0.0.6/go.mod h1:BzL7bXFaO8rwUS39R5F4wgMVQI+WneIA+Vj39UwSSe0=
