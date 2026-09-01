@@ -5,7 +5,7 @@
 # glibc version, which is enough to move a hash table benchmark. Updating this
 # digest is a commit of its own, so that a jump in the numbers can be read
 # against the commit that caused it.
-FROM python@sha256:c45a22ea000adfd9cda29364bbe7edd23001ce5cc2ad15857cfbf7766943b9ca
+FROM python@sha256:8edbf9e42c7fb168b9c523718ed907117e6d2e60f5889c0c499bbda3a787da53
 
 # uv resolves and installs from the lock file, which is what actually pins
 # pandas and Polars. The image only pins the interpreter under them.
