@@ -3,7 +3,7 @@
 # Pinned by digest for the same reason the Python image is: the toolchain and
 # the C library underneath it both affect the numbers, and a tag does not pin
 # either of them.
-FROM golang@sha256:a9278c7936a41f7d33dae94784df33442e71fb4d6943a08100cf1898845c5bea
+FROM golang@sha256:4013ae0f9e7994f8535c58c811f8f863fbed38b72e0d51e6592156f758d66146
 
 # GOTOOLCHAIN=local stops Go from downloading a different toolchain than the
 # one in this image. Without it, a go.mod bump would silently change the
