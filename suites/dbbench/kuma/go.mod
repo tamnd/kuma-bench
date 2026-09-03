@@ -5,4 +5,4 @@ module github.com/tamnd/kuma-bench/suites/dbbench/kuma
 
 go 1.27.0
 
-require github.com/tamnd/kuma v0.0.0-20260825230005-958818ab5af1
+require github.com/tamnd/kuma v0.0.38
