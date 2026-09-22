@@ -86,7 +86,7 @@ jobs:
 
       # setup-uv stopped publishing a moving major tag after v7, so this one is
       # pinned to a full version while the rest use a major. Dependabot bumps it.
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
@@ -112,7 +112,7 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
           enable-cache: true
 
